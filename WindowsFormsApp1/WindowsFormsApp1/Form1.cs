@@ -1,4 +1,5 @@
-﻿using IronOcr;
+﻿using System.Drawing;
+using System.Drawing.Imaging;
 using PdfSharp.Drawing;
 using PdfSharp.Pdf;
 using PdfSharp.Pdf.Advanced;
@@ -6,14 +7,11 @@ using PdfSharp.Pdf.IO;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Data;
-using System.Drawing;
-using System.Drawing.Imaging;
 using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Net.Http;
+using System.Threading.Tasks;
+using Newtonsoft.Json;
 
 namespace WindowsFormsApp1
 {
@@ -58,13 +56,6 @@ namespace WindowsFormsApp1
         /// (le truc juste en dessous là)
         /// </summary>
         public static int imageExportee;
-
-
-        /// <summary>
-        /// L'instance de la librairie qui permet
-        /// d'extraire le texte d'une image
-        /// </summary>
-        public static IronTesseract Ocr;
 
         /// <summary>
         /// Une mémoire tampon où sont stockés
@@ -133,16 +124,9 @@ namespace WindowsFormsApp1
         /// </summary>
         public Form1() {
             InitializeComponent();
-            IronOcr.Installation.LicenseKey = "IRONOCR.SAMHARWOOD.21026-50AFE42508-DJ272S3A2CCJ3B2A-E6LZQQB5GGLR-HSIFXJN2PGH7-U3J5JK5BX7QR-JTOFWXTSO7HH-USL5VR-TCGC2275VVWAUA-DEPLOYMENT.TRIAL-VLQJZF.TRIAL.EXPIRES.19.JUL.2021";
             frmReference = this;
             currentCopie = new List<string>();
             currentCopieCropped = new List<string>();
-
-            Ocr = new IronTesseract();
-            Ocr.Configuration.BlackListCharacters = "~`$#^*_}{][|\\@";
-            Ocr.Configuration.PageSegmentationMode = TesseractPageSegmentationMode.Auto;
-            Ocr.Configuration.TesseractVersion = TesseractVersion.Tesseract5;
-            Ocr.Configuration.EngineMode = TesseractEngineMode.LstmOnly;
         }
 
         /// <summary>
@@ -199,13 +183,13 @@ namespace WindowsFormsApp1
             string filter = image.Elements.GetName("/Filter");
             switch (filter) {
                 case "/DCTDecode":
-                    ExportJpegImage(image);
+                    ExportJpegImageAsync(image);
                     break;
             }
         }
 
 
-        static void ExportJpegImage(PdfDictionary image) {
+        static async System.Threading.Tasks.Task ExportJpegImageAsync(PdfDictionary image) {
             // Fortunately JPEG has native support in PDF and exporting an image is just writing the stream to a file.
             byte[] stream = image.Stream.Value;
             string path = cheminVersExports + $"{lot}_{imageExportee}.jpeg";
@@ -226,72 +210,85 @@ namespace WindowsFormsApp1
 
 
             try {
-                using (var Input = new OcrInput(newpath)) {
-                    Input.Deskew(); // removes rotation and perspective
-                    var Result = Ocr.Read(Input);
 
-                    if (!Result.Text.Contains("Bandeau anonymat")) {
+                var task = Task.Run(() => UploadCroppedImage(newpath));
+                task.Wait();
+                var Result = task.Result;
+
+                Rootobject ocrResult = JsonConvert.DeserializeObject<Rootobject>(Result);
+
+                Result = ocrResult.ParsedResults[0].ParsedText;
+
+                if (!Result.Contains("Bandeau anonymat")) {
+                    WriteToMyRichTextBox("La page fait partie de la même copie, on continue...");
+                    currentCopie.Add(path);
+                } else {
+                    var resulta = Result.Substring(Result.IndexOf($"{lot}-")).Trim();
+
+                    var megaman = resulta.Replace($"{lot}-", string.Empty);
+
+                    int copie = 0;
+                    try {
+                        copie = int.Parse(megaman);
+                    } catch (Exception ex) {
+                        MessageBox.Show(ex.ToString());
+                    }
+                    
+
+                    if (copie.ToString("000") == copieActuelle.ToString("000")) {
                         WriteToMyRichTextBox("La page fait partie de la même copie, on continue...");
                         currentCopie.Add(path);
                     } else {
-                        var resulta = Result.Text.Substring(Result.Text.LastIndexOf(':') + 1).Trim();
-                        var copie = int.Parse(resulta.Replace($"{lot}-", string.Empty));
+                        WriteToMyRichTextBox("Nouvelle copie !");
+                        WriteToMyRichTextBox("Exportation des pages précédentes");
 
-                        if (copie.ToString("000") == copieActuelle.ToString("000")) {
-                            WriteToMyRichTextBox("La page fait partie de la même copie, on continue...");
-                            currentCopie.Add(path);
-                        } else {
-                            WriteToMyRichTextBox("Nouvelle copie !");
-                            WriteToMyRichTextBox("Exportation des pages précédentes");
+                        PdfDocument doc = new PdfDocument();
 
-                            PdfDocument doc = new PdfDocument();
+                        foreach (var item in currentCopie) {
+                            try {
+                                string source = item;
+                                PdfPage oPage = new PdfPage();
 
-                            foreach (var item in currentCopie) {
-                                try {
-                                    string source = item;
-                                    PdfPage oPage = new PdfPage();
+                                doc.Pages.Add(oPage);
+                                XGraphics xgr = XGraphics.FromPdfPage(oPage);
+                                XImage imga = XImage.FromFile(source);
 
-                                    doc.Pages.Add(oPage);
-                                    XGraphics xgr = XGraphics.FromPdfPage(oPage);
-                                    XImage imga = XImage.FromFile(source);
-
-                                    xgr.DrawImage(imga, 0, 0, xgr.PageSize.Width, xgr.PageSize.Height);
-                                } catch (Exception ex) {
-                                    MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                                }
+                                xgr.DrawImage(imga, 0, 0, xgr.PageSize.Width, xgr.PageSize.Height);
+                            } catch (Exception ex) {
+                                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                             }
+                        }
 
 
-                            string destinaton = Directory.GetCurrentDirectory() + $"\\{lot}_{copieActuelle.ToString("000")}.pdf";
-                            doc.Save(destinaton);
-                            doc.Close();
+                        string destinaton = Directory.GetCurrentDirectory() + $"\\{lot}_{copieActuelle.ToString("000")}.pdf";
+                        doc.Save(destinaton);
+                        doc.Close();
 
-                            foreach (var item in currentCopie) {
-                                try {
-                                    File.Delete(item);
-                                } catch (Exception ex) {
-                                }
+                        foreach (var item in currentCopie) {
+                            try {
+                                File.Delete(item);
+                            } catch (Exception ex) {
                             }
+                        }
 
-                            foreach (var item in currentCopieCropped) {
-                                try {
-                                    File.Delete(item);
-                                } catch (Exception ex) {
-                                }
+                        foreach (var item in currentCopieCropped) {
+                            try {
+                                File.Delete(item);
+                            } catch (Exception ex) {
                             }
-                            currentCopie = new List<string> {
+                        }
+                        currentCopie = new List<string> {
                             path
                         };
-                            copieActuelle++;
+                        copieActuelle++;
 
-                            end = DateTime.Now;
-                            var temp_ecoule = (decimal)end.Subtract(begin).TotalSeconds;
-                            decimal totalTime = (temp_ecoule * totalPages) / pageActuelle;
-                            var remainingTime = totalTime - temp_ecoule;
-                            TimeSpan t = TimeSpan.FromSeconds(Decimal.ToDouble(remainingTime));
+                        end = DateTime.Now;
+                        var temp_ecoule = (decimal)end.Subtract(begin).TotalSeconds;
+                        decimal totalTime = (temp_ecoule * totalPages) / pageActuelle;
+                        var remainingTime = totalTime - temp_ecoule;
+                        TimeSpan t = TimeSpan.FromSeconds(Decimal.ToDouble(remainingTime));
 
-                            UpdateStatuLabel($"Il vous reste environ {t.Hours} heures {t.Minutes} minutes");
-                        }
+                        UpdateStatuLabel($"Il vous reste environ {t.Hours} heures {t.Minutes} minutes");
                     }
                 }
                 imageExportee++;
@@ -300,6 +297,33 @@ namespace WindowsFormsApp1
                 MessageBox.Show(ex.ToString());
             }
            
+        }
+
+        private static async Task<string> UploadCroppedImage(string path) {
+            HttpClient httpClient = new HttpClient {
+                Timeout = new TimeSpan(1, 1, 1)
+            };
+
+
+            MultipartFormDataContent form = new MultipartFormDataContent {
+                        { new StringContent("sharex889823"), "apikey" }, //Added api key in form data
+                        { new StringContent("fre"), "language" }
+                    };
+
+
+            form.Add(new StringContent("2"), "ocrengine");
+            form.Add(new StringContent("true"), "scale");
+            form.Add(new StringContent("true"), "istable");
+
+            if (string.IsNullOrEmpty(path) == false) {
+                byte[] imageData = File.ReadAllBytes(path);
+                form.Add(new ByteArrayContent(imageData, 0, imageData.Length), "image", "image.jpg");
+            }
+
+            HttpResponseMessage response = await httpClient.PostAsync("https://apipro1.ocr.space/parse/image", form);
+
+            string Result = await response.Content.ReadAsStringAsync();
+            return Result;
         }
 
         public static Bitmap CropImage(Image source, int x, int y, int width, int height) {
@@ -359,5 +383,22 @@ namespace WindowsFormsApp1
             // scroll it automatically
             richTextBox1.ScrollToCaret();
         }
+    }
+
+    public class Rootobject
+    {
+        public Parsedresult[] ParsedResults { get; set; }
+        public int OCRExitCode { get; set; }
+        public bool IsErroredOnProcessing { get; set; }
+        public string ErrorMessage { get; set; }
+        public string ErrorDetails { get; set; }
+    }
+
+    public class Parsedresult
+    {
+        public object FileParseExitCode { get; set; }
+        public string ParsedText { get; set; }
+        public string ErrorMessage { get; set; }
+        public string ErrorDetails { get; set; }
     }
 }
