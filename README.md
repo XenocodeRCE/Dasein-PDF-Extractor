@@ -14,4 +14,4 @@ Logiciel pour diviser le tas de copie Santorin en copies individualisées
 # Logiciel en action
 
 
-![](https://i.imgur.com/FYDu2hi.gif)
+![](https://i.imgur.com/y2irtMP.gif)
