@@ -9,3 +9,9 @@ Logiciel pour diviser le tas de copie Santorin en copies individualisées
 3. Double-cliquez sur "WindowsFormsApp1.exe" cela va lancer le logiciel
 4. Renseignez votre numéro de lot puis cliquez sur "Charger PDF" pour selectionner le gros PDF avec toutes les copies du lot.
 5. Cliquez sur "Analyser et découper" puis laisser le logiciel faire son boulot 
+
+
+# Logiciel en action
+
+
+![](https://i.imgur.com/FYDu2hi.gif)
