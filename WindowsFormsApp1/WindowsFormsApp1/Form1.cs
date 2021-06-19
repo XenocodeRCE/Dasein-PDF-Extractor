@@ -133,6 +133,7 @@ namespace WindowsFormsApp1
         /// </summary>
         public Form1() {
             InitializeComponent();
+            IronOcr.Installation.LicenseKey = "IRONOCR.SAMHARWOOD.21026-50AFE42508-DJ272S3A2CCJ3B2A-E6LZQQB5GGLR-HSIFXJN2PGH7-U3J5JK5BX7QR-JTOFWXTSO7HH-USL5VR-TCGC2275VVWAUA-DEPLOYMENT.TRIAL-VLQJZF.TRIAL.EXPIRES.19.JUL.2021";
             frmReference = this;
             currentCopie = new List<string>();
             currentCopieCropped = new List<string>();
@@ -223,77 +224,82 @@ namespace WindowsFormsApp1
 
             WriteToMyRichTextBox($"Page {pageActuelle} : récupération texte...");
 
-           
 
-            using (var Input = new OcrInput(newpath)) {
-                Input.Deskew(); // removes rotation and perspective
-                var Result = Ocr.Read(Input);
+            try {
+                using (var Input = new OcrInput(newpath)) {
+                    Input.Deskew(); // removes rotation and perspective
+                    var Result = Ocr.Read(Input);
 
-                if (!Result.Text.Contains("Bandeau anonymat")) {
-                    WriteToMyRichTextBox("La page fait partie de la même copie, on continue...");
-                    currentCopie.Add(path);
-                } else {
-                    var resulta = Result.Text.Substring(Result.Text.LastIndexOf(':') + 1).Trim();
-                    var copie = int.Parse(resulta.Replace($"{lot}-", string.Empty));
-
-                    if (copie.ToString("000") == copieActuelle.ToString("000")) {
+                    if (!Result.Text.Contains("Bandeau anonymat")) {
                         WriteToMyRichTextBox("La page fait partie de la même copie, on continue...");
                         currentCopie.Add(path);
                     } else {
-                        WriteToMyRichTextBox("Nouvelle copie !");
-                        WriteToMyRichTextBox("Exportation des pages précédentes");
+                        var resulta = Result.Text.Substring(Result.Text.LastIndexOf(':') + 1).Trim();
+                        var copie = int.Parse(resulta.Replace($"{lot}-", string.Empty));
 
-                        PdfDocument doc = new PdfDocument();
+                        if (copie.ToString("000") == copieActuelle.ToString("000")) {
+                            WriteToMyRichTextBox("La page fait partie de la même copie, on continue...");
+                            currentCopie.Add(path);
+                        } else {
+                            WriteToMyRichTextBox("Nouvelle copie !");
+                            WriteToMyRichTextBox("Exportation des pages précédentes");
 
-                        foreach (var item in currentCopie) {
-                            try {
-                                string source = item;
-                                PdfPage oPage = new PdfPage();
+                            PdfDocument doc = new PdfDocument();
 
-                                doc.Pages.Add(oPage);
-                                XGraphics xgr = XGraphics.FromPdfPage(oPage);
-                                XImage imga = XImage.FromFile(source);
+                            foreach (var item in currentCopie) {
+                                try {
+                                    string source = item;
+                                    PdfPage oPage = new PdfPage();
 
-                                xgr.DrawImage(imga, 0, 0, xgr.PageSize.Width, xgr.PageSize.Height);
-                            } catch (Exception ex) {
-                                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                                    doc.Pages.Add(oPage);
+                                    XGraphics xgr = XGraphics.FromPdfPage(oPage);
+                                    XImage imga = XImage.FromFile(source);
+
+                                    xgr.DrawImage(imga, 0, 0, xgr.PageSize.Width, xgr.PageSize.Height);
+                                } catch (Exception ex) {
+                                    MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                                }
                             }
-                        }
 
 
-                        string destinaton = Directory.GetCurrentDirectory() + $"\\{lot}_{copieActuelle.ToString("000")}.pdf";
-                        doc.Save(destinaton);
-                        doc.Close();
+                            string destinaton = Directory.GetCurrentDirectory() + $"\\{lot}_{copieActuelle.ToString("000")}.pdf";
+                            doc.Save(destinaton);
+                            doc.Close();
 
-                        foreach (var item in currentCopie) {
-                            try {
-                                File.Delete(item);
-                            } catch (Exception ex) {
+                            foreach (var item in currentCopie) {
+                                try {
+                                    File.Delete(item);
+                                } catch (Exception ex) {
+                                }
                             }
-                        }
 
-                        foreach (var item in currentCopieCropped) {
-                            try {
-                                File.Delete(item);
-                            } catch (Exception ex) {
+                            foreach (var item in currentCopieCropped) {
+                                try {
+                                    File.Delete(item);
+                                } catch (Exception ex) {
+                                }
                             }
-                        }
-                        currentCopie = new List<string> {
+                            currentCopie = new List<string> {
                             path
                         };
-                        copieActuelle++;
+                            copieActuelle++;
 
-                        end = DateTime.Now;
-                        var temp_ecoule = (decimal)end.Subtract(begin).TotalSeconds;
-                        decimal totalTime = (temp_ecoule * totalPages) / pageActuelle;
-                        var remainingTime = totalTime - temp_ecoule;
-                        TimeSpan t = TimeSpan.FromSeconds(Decimal.ToDouble(remainingTime));
+                            end = DateTime.Now;
+                            var temp_ecoule = (decimal)end.Subtract(begin).TotalSeconds;
+                            decimal totalTime = (temp_ecoule * totalPages) / pageActuelle;
+                            var remainingTime = totalTime - temp_ecoule;
+                            TimeSpan t = TimeSpan.FromSeconds(Decimal.ToDouble(remainingTime));
 
-                        UpdateStatuLabel($"Il vous reste environ {t.Hours} heures {t.Minutes} minutes");
+                            UpdateStatuLabel($"Il vous reste environ {t.Hours} heures {t.Minutes} minutes");
+                        }
                     }
                 }
+                imageExportee++;
+            } catch (Exception ex) {
+
+                MessageBox.Show(ex.ToString());
             }
-            imageExportee++;
+           
         }
 
         public static Bitmap CropImage(Image source, int x, int y, int width, int height) {
@@ -311,7 +317,7 @@ namespace WindowsFormsApp1
             // Iterate pages
 
             totalPages = inputDocument.PageCount;
-            UpdateStatuLabel($"Traitement de la page n°1...");
+            UpdateStatuLabel($"Traitement de la copie n°1...");
 
             foreach (PdfPage page in inputDocument.Pages) {
                 pageActuelle++;
