@@ -243,8 +243,14 @@ namespace WindowsFormsApp1
 
         static async System.Threading.Tasks.Task ExportJpegImageAsync(PdfDictionary image) {
             // Fortunately JPEG has native support in PDF and exporting an image is just writing the stream to a file.
+            bool error = false;
+
+            LABEL_RETRY:
+
             byte[] stream = image.Stream.Value;
             string path = cheminVersExports + $"\\temp\\{lot}_{imageExportee}.jpeg";
+            if (File.Exists(path))
+                File.Delete(path);
             FileStream fs = new FileStream(path, FileMode.Create, FileAccess.Write);
             BinaryWriter bw = new BinaryWriter(fs);
             bw.Write(stream);
@@ -254,45 +260,52 @@ namespace WindowsFormsApp1
 
             Image img = Image.FromFile(path);
             var result = CropImage(img, 0, 0, 2480, 613);
+            img.Dispose();
+
             
-            //rescale 8 fois moins gros
-            result = new Bitmap(result, new Size(result.Width / 8, result.Height / 8));
 
-            //noir et blanc
-            // Variable for image brightness
-            double avgBright = 0;
-            for (int y = 0; y < result.Height; y++) {
-                for (int x = 0; x < result.Width; x++) {
-                    // Get the brightness of this pixel
-                    avgBright += result.GetPixel(x, y).GetBrightness();
+            if (!error) {
+                //rescale 8 fois moins gros
+                result = new Bitmap(result, new Size(result.Width / 8, result.Height / 8));
+
+                //noir et blanc
+                // Variable for image brightness
+                double avgBright = 0;
+                for (int y = 0; y < result.Height; y++) {
+                    for (int x = 0; x < result.Width; x++) {
+                        // Get the brightness of this pixel
+                        avgBright += result.GetPixel(x, y).GetBrightness();
+                    }
+                }
+
+                // Get the average brightness and limit it's min / max
+                avgBright = avgBright / (result.Width * result.Height);
+                avgBright = avgBright < .3 ? .3 : avgBright;
+                avgBright = avgBright > .7 ? .7 : avgBright;
+
+                // Convert image to black and white based on average brightness
+                for (int y = 0; y < result.Height; y++) {
+                    for (int x = 0; x < result.Width; x++) {
+                        // Set this pixel to black or white based on threshold
+                        if (result.GetPixel(x, y).GetBrightness() > avgBright) result.SetPixel(x, y, Color.White);
+                        else result.SetPixel(x, y, Color.Black);
+                    }
                 }
             }
 
-            // Get the average brightness and limit it's min / max
-            avgBright = avgBright / (result.Width * result.Height);
-            avgBright = avgBright < .3 ? .3 : avgBright;
-            avgBright = avgBright > .7 ? .7 : avgBright;
-
-            // Convert image to black and white based on average brightness
-            for (int y = 0; y < result.Height; y++) {
-                for (int x = 0; x < result.Width; x++) {
-                    // Set this pixel to black or white based on threshold
-                    if (result.GetPixel(x, y).GetBrightness() > avgBright) result.SetPixel(x, y, Color.White);
-                    else result.SetPixel(x, y, Color.Black);
-                }
-            }
 
             // Image is now in black and white
 
             var newpath = cheminVersExports + $"\\temp\\{ lot}_{imageExportee}_cropped.png";
             result.Save(newpath, ImageFormat.Png);
-
+            result.Dispose();
 
             currentCopieCropped.Add(newpath);
 
             WriteToMyRichTextBox($"Page {pageActuelle} : récupération texte...");
 
-            LABEL_RETRY:
+
+            
             try {
 
                 var task = Task.Run(() => UploadCroppedImage(newpath));
@@ -367,9 +380,12 @@ namespace WindowsFormsApp1
                         UpdateStatuLabel($"Il vous reste environ {t.Hours} heures {t.Minutes} minutes");
                     }
                 }
+
+                error = false;
                 imageExportee++;
             } catch (Exception ex) {
                 MessageBox.Show($"Erreur avec la page actuelle {pageActuelle} ! Re-essayons..." );
+                error = true;
                 goto LABEL_RETRY;
 
             }
