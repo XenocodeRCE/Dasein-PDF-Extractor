@@ -12,6 +12,7 @@ using System.Windows.Forms;
 using System.Net.Http;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
+using System.Diagnostics;
 
 namespace WindowsFormsApp1
 {
@@ -170,6 +171,14 @@ namespace WindowsFormsApp1
                 string filePath = ofd.FileName;
                 string safeFilePath = ofd.SafeFileName;
                 txt_chemin.Text = filePath;
+
+                var lot = txt_chemin.Text.Substring(txt_chemin.Text.IndexOf("_lot") + 1).Replace(".pdf", string.Empty).Replace("lot", string.Empty);
+                if (IsDigitsOnly(lot) && string.IsNullOrWhiteSpace(txt_lot.Text)) {
+                    txt_lot.Text = lot;
+                    toolStripStatusLabel1.Text = $"Récupération automatique du numéro de lot : {lot}.";
+                } else {
+                    toolStripStatusLabel1.Text = "Impossible de récupérer automatiquement le numéro de lot.";
+                }
             }
         }
 
@@ -212,6 +221,15 @@ namespace WindowsFormsApp1
         /*
          Code qui fait un truc utile de fait
          */
+
+        bool IsDigitsOnly(string str) {
+            foreach (char c in str) {
+                if (c < '0' || c > '9')
+                    return false;
+            }
+
+            return true;
+        }
 
         static void ExportImage(PdfDictionary image) {
             string filter = image.Elements.GetName("/Filter");
@@ -334,19 +352,7 @@ namespace WindowsFormsApp1
                         doc.Save(destinaton);
                         doc.Close();
 
-                        foreach (var item in currentCopie) {
-                            try {
-                                File.Delete(item);
-                            } catch (Exception ex) {
-                            }
-                        }
-
-                        foreach (var item in currentCopieCropped) {
-                            try {
-                                File.Delete(item);
-                            } catch (Exception ex) {
-                            }
-                        }
+                        
                         currentCopie = new List<string> {
                             path
                         };
@@ -490,6 +496,8 @@ namespace WindowsFormsApp1
         private void backgroundWorker1_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e) {
             MessageBox.Show("Tâche accomplie !");
             UpdateStatuLabel($"Tâche accomplie ! Veuillez trouver vos PDF dans le dossier.");
+            Process.Start(cheminVersExports);
+
 
         }
 
