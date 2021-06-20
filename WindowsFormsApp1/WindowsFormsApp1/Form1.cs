@@ -41,6 +41,19 @@ namespace WindowsFormsApp1
         public static int pageActuelle = 0;
 
         /// <summary>
+        /// Numero de la dernière page analysée 
+        /// où on peut clairement voir que c'est la première
+        /// page de la copie
+        /// </summary>
+        public static int lastVraiCopie = 0;
+
+        /// <summary>
+        /// Numero de la dernière page analysée 
+        /// associée à <see cref="lastVraiCopie"/>
+        /// </summary>
+        public static int lastVraiPage = 0;
+
+        /// <summary>
         /// Le PDF avec le lot entier des copies
         /// </summary>
         public static PdfDocument inputDocument;
@@ -105,9 +118,23 @@ namespace WindowsFormsApp1
                 // Running on the UI thread
                 frmReference.richTextBox1.AppendText(what);
                 frmReference.richTextBox1.AppendText(Environment.NewLine);
+                frmReference.nud_page.Value = pageActuelle;
+                frmReference.nud_copie.Value = copieActuelle;
+
+                frmReference.pb_total.Value += 1;
             });
         }
 
+        private static void SetProgressBar() {
+            frmReference.statusStrip1.Invoke(new Action(() => frmReference.pb_total.Maximum = totalPages * 10));
+            frmReference.statusStrip1.Invoke(new Action(() => frmReference.lbl_total.Text = $"Pages tot° : {totalPages}"));
+
+            //lbl_total
+        }
+        private static void UpdateProgressBar() {
+            frmReference.statusStrip1.Invoke(new Action(() => frmReference.pb_total.Value += 1));
+            frmReference.statusStrip1.Invoke(new Action(() => frmReference.pb_total.Update()));
+        }
         private static void UpdateStatuLabel(string what) {
 
             frmReference.statusStrip1.Invoke(new Action(() => frmReference.toolStripStatusLabel1.Text = what));
@@ -164,10 +191,17 @@ namespace WindowsFormsApp1
                 lot = txt_lot.Text;
                 if (!Directory.Exists(Directory.GetCurrentDirectory() + $"\\{lot}\\")) {
                     Directory.CreateDirectory(Directory.GetCurrentDirectory() + $"\\{lot}\\");
+                    Directory.CreateDirectory(Directory.GetCurrentDirectory() + $"\\{lot}\\temp\\");
+
                 }
                 cheminVersExports = Directory.GetCurrentDirectory() + $"\\{lot}\\";
 
                 inputDocument = PdfReader.Open(txt_chemin.Text, PdfDocumentOpenMode.Modify);
+
+                pageActuelle = Convert.ToInt32(nud_page.Value);
+                copieActuelle = Convert.ToInt32(nud_copie.Value);
+                nud_page.Enabled = false;
+                nud_copie.Enabled = false;
                 backgroundWorker1.RunWorkerAsync();
             }
 
@@ -192,7 +226,7 @@ namespace WindowsFormsApp1
         static async System.Threading.Tasks.Task ExportJpegImageAsync(PdfDictionary image) {
             // Fortunately JPEG has native support in PDF and exporting an image is just writing the stream to a file.
             byte[] stream = image.Stream.Value;
-            string path = cheminVersExports + $"{lot}_{imageExportee}.jpeg";
+            string path = cheminVersExports + $"\\temp\\{lot}_{imageExportee}.jpeg";
             FileStream fs = new FileStream(path, FileMode.Create, FileAccess.Write);
             BinaryWriter bw = new BinaryWriter(fs);
             bw.Write(stream);
@@ -202,13 +236,45 @@ namespace WindowsFormsApp1
 
             Image img = Image.FromFile(path);
             var result = CropImage(img, 0, 0, 2480, 613);
-            var newpath = cheminVersExports + $"{lot}_{imageExportee}_cropped.png";
+            
+            //rescale 8 fois moins gros
+            result = new Bitmap(result, new Size(result.Width / 8, result.Height / 8));
+
+            //noir et blanc
+            // Variable for image brightness
+            double avgBright = 0;
+            for (int y = 0; y < result.Height; y++) {
+                for (int x = 0; x < result.Width; x++) {
+                    // Get the brightness of this pixel
+                    avgBright += result.GetPixel(x, y).GetBrightness();
+                }
+            }
+
+            // Get the average brightness and limit it's min / max
+            avgBright = avgBright / (result.Width * result.Height);
+            avgBright = avgBright < .3 ? .3 : avgBright;
+            avgBright = avgBright > .7 ? .7 : avgBright;
+
+            // Convert image to black and white based on average brightness
+            for (int y = 0; y < result.Height; y++) {
+                for (int x = 0; x < result.Width; x++) {
+                    // Set this pixel to black or white based on threshold
+                    if (result.GetPixel(x, y).GetBrightness() > avgBright) result.SetPixel(x, y, Color.White);
+                    else result.SetPixel(x, y, Color.Black);
+                }
+            }
+
+            // Image is now in black and white
+
+            var newpath = cheminVersExports + $"\\temp\\{ lot}_{imageExportee}_cropped.png";
             result.Save(newpath, ImageFormat.Png);
+
+
             currentCopieCropped.Add(newpath);
 
             WriteToMyRichTextBox($"Page {pageActuelle} : récupération texte...");
 
-
+            LABEL_RETRY:
             try {
 
                 var task = Task.Run(() => UploadCroppedImage(newpath));
@@ -217,7 +283,10 @@ namespace WindowsFormsApp1
 
                 Rootobject ocrResult = JsonConvert.DeserializeObject<Rootobject>(Result);
 
-                Result = ocrResult.ParsedResults[0].ParsedText;
+                Result = "";
+                if (ocrResult != null) {
+                    Result = ocrResult.ParsedResults[0].ParsedText;
+                }
 
                 if (!Result.Contains("Bandeau anonymat")) {
                     WriteToMyRichTextBox("La page fait partie de la même copie, on continue...");
@@ -225,7 +294,7 @@ namespace WindowsFormsApp1
                 } else {
                     var resulta = Result.Substring(Result.IndexOf($"{lot}-")).Trim();
 
-                    var megaman = resulta.Replace($"{lot}-", string.Empty);
+                    var megaman = resulta.Replace($"{lot}-", string.Empty).Substring(0, 3);
 
                     int copie = 0;
                     try {
@@ -241,7 +310,8 @@ namespace WindowsFormsApp1
                     } else {
                         WriteToMyRichTextBox("Nouvelle copie !");
                         WriteToMyRichTextBox("Exportation des pages précédentes");
-
+                        lastVraiCopie = copieActuelle;
+                        lastVraiPage = pageActuelle;
                         PdfDocument doc = new PdfDocument();
 
                         foreach (var item in currentCopie) {
@@ -260,7 +330,7 @@ namespace WindowsFormsApp1
                         }
 
 
-                        string destinaton = Directory.GetCurrentDirectory() + $"\\{lot}_{copieActuelle.ToString("000")}.pdf";
+                        string destinaton = cheminVersExports + $"\\{lot}_{copieActuelle.ToString("000")}.pdf";
                         doc.Save(destinaton);
                         doc.Close();
 
@@ -293,10 +363,11 @@ namespace WindowsFormsApp1
                 }
                 imageExportee++;
             } catch (Exception ex) {
+                MessageBox.Show($"Erreur avec la page actuelle {pageActuelle} ! Re-essayons..." );
+                goto LABEL_RETRY;
 
-                MessageBox.Show(ex.ToString());
             }
-           
+
         }
 
         private static async Task<string> UploadCroppedImage(string path) {
@@ -341,34 +412,79 @@ namespace WindowsFormsApp1
             // Iterate pages
 
             totalPages = inputDocument.PageCount;
+
+            SetProgressBar();
             UpdateStatuLabel($"Traitement de la copie n°1...");
 
-            foreach (PdfPage page in inputDocument.Pages) {
-                pageActuelle++;
-                WriteToMyRichTextBox($"Page {pageActuelle} : lecture");
-                // Get resources dictionary
-                PdfDictionary resources = page.Elements.GetDictionary("/Resources");
-                if (resources != null) {
-                    // Get external objects dictionary
-                    PdfDictionary xObjects = resources.Elements.GetDictionary("/XObject");
-                    if (xObjects != null) {
-                        ICollection<PdfItem> items = xObjects.Elements.Values;
-                        // Iterate references to external objects
-                        foreach (PdfItem item in items) {
-                            PdfReference reference = item as PdfReference;
-                            if (reference != null) {
-                                PdfDictionary xObject = reference.Value as PdfDictionary;
-                                // Is external object an image?
-                                if (xObject != null && xObject.Elements.GetString("/Subtype") == "/Image") {
-                                    WriteToMyRichTextBox($"Page {pageActuelle} : extraction image");
+            if(frmReference.nud_copie.Value != 0) {
 
-                                    ExportImage(xObject);
+                var valuePage = Convert.ToInt32(frmReference.nud_page.Value);
+                for (int i = valuePage; i < inputDocument.Pages.Count; i++) {
+                    var page = inputDocument.Pages[i];
+
+                    UpdateProgressBar();
+                    pageActuelle++;
+
+                    WriteToMyRichTextBox($"Page {pageActuelle} : lecture");
+                    // Get resources dictionary
+                    PdfDictionary resources = page.Elements.GetDictionary("/Resources");
+                    if (resources != null) {
+                        // Get external objects dictionary
+                        PdfDictionary xObjects = resources.Elements.GetDictionary("/XObject");
+                        if (xObjects != null) {
+                            ICollection<PdfItem> items = xObjects.Elements.Values;
+                            // Iterate references to external objects
+                            foreach (PdfItem item in items) {
+                                PdfReference reference = item as PdfReference;
+                                if (reference != null) {
+                                    PdfDictionary xObject = reference.Value as PdfDictionary;
+                                    // Is external object an image?
+                                    if (xObject != null && xObject.Elements.GetString("/Subtype") == "/Image") {
+                                        WriteToMyRichTextBox($"Page {pageActuelle} : extraction image");
+
+                                        ExportImage(xObject);
+                                    }
                                 }
                             }
                         }
                     }
                 }
+
+            } else {
+
+                for (int i = 0; i < inputDocument.Pages.Count; i++) {
+                    var page = inputDocument.Pages[i];
+
+                    UpdateProgressBar();
+                    pageActuelle++;
+
+                    WriteToMyRichTextBox($"Page {pageActuelle} : lecture");
+                    // Get resources dictionary
+                    PdfDictionary resources = page.Elements.GetDictionary("/Resources");
+                    if (resources != null) {
+                        // Get external objects dictionary
+                        PdfDictionary xObjects = resources.Elements.GetDictionary("/XObject");
+                        if (xObjects != null) {
+                            ICollection<PdfItem> items = xObjects.Elements.Values;
+                            // Iterate references to external objects
+                            foreach (PdfItem item in items) {
+                                PdfReference reference = item as PdfReference;
+                                if (reference != null) {
+                                    PdfDictionary xObject = reference.Value as PdfDictionary;
+                                    // Is external object an image?
+                                    if (xObject != null && xObject.Elements.GetString("/Subtype") == "/Image") {
+                                        WriteToMyRichTextBox($"Page {pageActuelle} : extraction image");
+
+                                        ExportImage(xObject);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
             }
+            
         }
 
         private void backgroundWorker1_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e) {
@@ -382,6 +498,12 @@ namespace WindowsFormsApp1
             richTextBox1.SelectionStart = richTextBox1.Text.Length;
             // scroll it automatically
             richTextBox1.ScrollToCaret();
+        }
+
+        private void button3_Click(object sender, EventArgs e) {
+            File.WriteAllText("Sauvegarde.txt", $"page: {lastVraiPage} | copie: {lastVraiCopie +1} ");
+            MessageBox.Show("La dernière copie entière et la dernière page associée ont été enregistrées dans le dossier racine dans le fichier 'Sauvegarde.txt'. La prochaine fois que vous lancez le logiciel, renseignez le numéro de page et de copie inscrit.");
+            Environment.Exit(0);
         }
     }
 
