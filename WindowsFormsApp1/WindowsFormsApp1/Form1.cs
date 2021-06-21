@@ -381,6 +381,46 @@ namespace WindowsFormsApp1
                     }
                 }
 
+
+                if(pageActuelle == totalPages) {
+                    lastVraiCopie = copieActuelle;
+                    lastVraiPage = pageActuelle;
+                    PdfDocument doc = new PdfDocument();
+
+                    foreach (var item in currentCopie) {
+                        try {
+                            string source = item;
+                            PdfPage oPage = new PdfPage();
+
+                            doc.Pages.Add(oPage);
+                            XGraphics xgr = XGraphics.FromPdfPage(oPage);
+                            XImage imga = XImage.FromFile(source);
+
+                            xgr.DrawImage(imga, 0, 0, xgr.PageSize.Width, xgr.PageSize.Height);
+                        } catch (Exception ex) {
+                            MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        }
+                    }
+
+
+                    string destinaton = cheminVersExports + $"\\{lot}_{copieActuelle.ToString("000")}.pdf";
+                    doc.Save(destinaton);
+                    doc.Close();
+
+
+                    currentCopie = new List<string> {
+                            path
+                        };
+                    copieActuelle++;
+
+                    end = DateTime.Now;
+                    var temp_ecoule = (decimal)end.Subtract(begin).TotalSeconds;
+                    decimal totalTime = (temp_ecoule * totalPages) / pageActuelle;
+                    var remainingTime = totalTime - temp_ecoule;
+                    TimeSpan t = TimeSpan.FromSeconds(Decimal.ToDouble(remainingTime));
+
+                    UpdateStatuLabel($"Il vous reste environ {t.Hours} heures {t.Minutes} minutes");
+                }
                 error = false;
                 imageExportee++;
             } catch (Exception ex) {
