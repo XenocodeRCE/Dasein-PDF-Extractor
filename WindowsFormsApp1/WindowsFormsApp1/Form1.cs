@@ -121,19 +121,17 @@ namespace WindowsFormsApp1
                 frmReference.richTextBox1.AppendText(Environment.NewLine);
                 frmReference.nud_page.Value = pageActuelle;
                 frmReference.nud_copie.Value = copieActuelle;
-
-                frmReference.pb_total.Value += 1;
             });
         }
 
         private static void SetProgressBar() {
-            frmReference.statusStrip1.Invoke(new Action(() => frmReference.pb_total.Maximum = totalPages * 10));
+            frmReference.statusStrip1.Invoke(new Action(() => frmReference.pb_total.Maximum = totalPages));
             frmReference.statusStrip1.Invoke(new Action(() => frmReference.lbl_total.Text = $"Pages tot° : {totalPages}"));
 
             //lbl_total
         }
         private static void UpdateProgressBar() {
-            frmReference.statusStrip1.Invoke(new Action(() => frmReference.pb_total.Value += 1));
+            frmReference.statusStrip1.Invoke(new Action(() => frmReference.pb_total.Value = pageActuelle));
             frmReference.statusStrip1.Invoke(new Action(() => frmReference.pb_total.Update()));
         }
         private static void UpdateStatuLabel(string what) {
@@ -331,7 +329,9 @@ namespace WindowsFormsApp1
                     try {
                         copie = int.Parse(megaman);
                     } catch (Exception ex) {
-                        MessageBox.Show(ex.ToString());
+                        error = true;
+                        WriteToMyRichTextBox($"Impossible de récupérer le bon numéro de la copie de la page {pageActuelle}, on re essaie ...");
+                        goto LABEL_RETRY;
                     }
                     
 
@@ -424,7 +424,7 @@ namespace WindowsFormsApp1
                 error = false;
                 imageExportee++;
             } catch (Exception ex) {
-                MessageBox.Show($"Erreur avec la page actuelle {pageActuelle} ! Re-essayons..." );
+                WriteToMyRichTextBox($"Erreur avec la page actuelle {pageActuelle} ! Re-essayons...");
                 error = true;
                 goto LABEL_RETRY;
 
